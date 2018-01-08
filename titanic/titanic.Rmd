@@ -1,0 +1,102 @@
+---
+title: "titanic"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Exploring Titanic Dataset 
+Look at working directory and read the data
+
+```{r titanic}
+train <- read.csv("train.csv",stringsAsFactors = FALSE) 
+str(train)
+summary(train)
+```
+## How many people survived
+
+```{r}
+survived <- table(train$Survived)
+names(survived) <- c('No', 'Yes')
+survived
+```
+
+## get proportion table
+
+```{r pressure, echo=FALSE}
+prop.table(survived)
+```
+
+## enter dying prediction to testing dataset
+```{r}
+test <- read.csv("test.csv",stringsAsFactors = FALSE) 
+test$Survived <- rep(0, 418)
+```
+
+## write first submission 
+
+```{r}
+submit <- data.frame(PassengerId = test$PassengerId, Survived = test$Survived)
+write.csv(submit, file = "theyallperish.csv", row.names = FALSE)
+```
+## We get sex to see who survived
+```{r}
+prop.table(table(train$Sex,train$Survived),1)
+test$Survived <- 0
+#install.packages("dplyr")
+#library(dplyr)
+#test = select(test, -s)
+```
+## having that females survived with a higher percentage I can say first females survived
+```{r}
+test$Survived[test$Sex=='female']<-1
+
+writemycsv <- function (myData){
+  submit <- data.frame(PassengerId = myData$PassengerId, Survived = myData$Survived)
+  write.csv(submit, file = "theyallperish.csv", row.names = FALSE)
+}
+writemycsv(test)
+```
+## I start contemplating age value into the picture and create children feature
+```{r}
+summary(train$Age)
+train$child <- 0
+train$child[train$Age<18] <- 1
+```
+## we can group survived passenger that are child by sex
+we can see most female childs survived
+```{r}
+aggregate(Survived~child+Sex,data=train,FUN = sum)
+aggregate(Survived~child+Sex,data=train,FUN = length)
+aggregate(Survived~child+Sex,data=train,FUN =function(x){sum(x)/length(x)})
+```
+## create fare feature to see it will help with output
+```{r}
+summary(train$Fare)
+train$fareCat <- '<10'
+train$fareCat[train$Fare<=10 & train$Fare<=20] <- '10-20'
+train$fareCat[train$Fare>20 & train$Fare<=30] <- '21-30'
+train$fareCat[train$Fare>31] <- '>31'
+aggregate(Survived~fareCat+Pclass+Sex,data=train,FUN=function(x){sum(x)/length(x)})
+```
+## having a viewed that class 3 females did not do good we do a new prediction
+```{r}
+test$Survived <- 0
+test$Survived[test$Sex=='female'] <-1
+test$Survived[test$Sex=='female'&test$Pclass==3&test$Fare>=20] <-0
+writemycsv(test)
+```
+## decision trees are going to be used instead of picking and fishing for results
+```{r}
+library(rpart)
+#method class we get a 0 or 1, method anova returns decimal quantaties
+fit <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked, data=train,method = "class")
+#plot did not work as expected 
+plot(fit)
+survived3 <- predict(fit,test, type = "class")
+test <- data.frame(PassengerId = test$PassengerId, Survived=survived3)
+writemycsv(test)
+```
+
