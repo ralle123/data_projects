@@ -11,6 +11,7 @@ knitr::opts_chunk$set(echo = TRUE)
 Look at working directory and read the data
 
 ```{r titanic}
+rm(list=ls()) 
 train <- read.csv("train.csv",stringsAsFactors = FALSE) 
 str(train)
 summary(train)
@@ -64,6 +65,11 @@ writemycsv(test)
 summary(train$Age)
 train$child <- 0
 train$child[train$Age<18] <- 1
+childFix <- function(tempData){
+  tempData$child <- 0
+  tempData$child[tempData$Age<18] <- 1
+  return(tempData)
+}
 ```
 ## we can group survived passenger that are child by sex
 we can see most female childs survived
@@ -75,6 +81,13 @@ aggregate(Survived~child+Sex,data=train,FUN =function(x){sum(x)/length(x)})
 ## create fare feature to see it will help with output
 ```{r}
 summary(train$Fare)
+fareFix <- function(tempData){
+  tempData$fareCat <- '<10'
+  tempData$fareCat[tempData$Fare<=10 & tempData$Fare<=20] <- '10-20'
+  tempData$fareCat[tempData$Fare>20 & tempData$Fare<=30] <- '21-30'
+  tempData$fareCat[tempData$Fare>31] <- '>31'  
+  return(tempData)
+}
 train$fareCat <- '<10'
 train$fareCat[train$Fare<=10 & train$Fare<=20] <- '10-20'
 train$fareCat[train$Fare>20 & train$Fare<=30] <- '21-30'
@@ -98,5 +111,123 @@ plot(fit)
 survived3 <- predict(fit,test, type = "class")
 test <- data.frame(PassengerId = test$PassengerId, Survived=survived3)
 writemycsv(test)
+```
+## will try feature engineering starting with the name
+#rm(list=ls())  
+```{r}
+train$Name[1]
+train <- read.csv("train.csv")
+test <- read.csv("test.csv")
+#test <- read.csv("test.csv",stringsAsFactors = FALSE) 
+test$Survived <- NA
+#add child column to test
+train <- childFix(train)
+test <- childFix(test)
+#add fare column to test
+train <- fareFix(train)
+test <- fareFix(test)
+
+combi <- rbind(train,test)
+combi$Name <- as.character(combi$Name)
+combi$Name[1]
+#we obtain part of name we want
+strsplit(combi$Name[1],split = '[,.]')[[1]][2]
+#create a feature just containing the tittle of the preson
+combi$Title <- sapply(combi$Name, FUN = function(x){strsplit(x,split = '[,.]')[[1]][2]})
+#clean title before moving on
+combi$Title <- sub(' ','',combi$Title)
+table(combi$Title)
+combi$Title[combi$Title %in% c('Mlle','Mme')] <- 'Mlle'
+combi$Title[combi$Title %in% c('Capt','Don','Major','Sir','Jonkheer')] <- 'Sir'
+combi$Title[combi$Title %in% c('Dona','Lady','the Countess')] <- 'Lady'
+combi$Title <- factor(combi$Title)
+combi$FamilySize <- combi$Parch + combi$SibSp + 1
+combi$Surname <- sapply(combi$Name, FUN=function(x) {strsplit(x, split='[,.]')[[1]][1]})
+combi$FamilyID <- paste(as.character(combi$FamilySize), combi$Surname, sep="")
+combi$FamilyID[combi$FamilySize <= 2] <- 'Small'
+table(combi$FamilyID)
+famIDs <- data.frame(table(combi$FamilyID))
+famIDs <- famIDs[famIDs$Freq <= 2,]
+combi$FamilyID[combi$FamilyID %in% famIDs$Var1] <- 'Small'
+combi$FamilyID <- factor(combi$FamilyID)
+train <- combi[1:891,]
+test <- combi[892:1309,]
+```
+## after creating new features and slicing combi back into the original datasets a new model is created
+```{r}
+fit2 <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID, data=train,method = "class")
+plot(fit2)
+survived4 <- predict(fit2,test, type = "class")
+test2 <- data.frame(PassengerId = test$PassengerId, Survived=survived4)
+writemycsv(test2)
+```
+## we go back and check age
+there are 263 values that are NA
+```{r}
+summary(combi$Age)
+Agefit <- rpart(Age ~ Pclass + Sex + SibSp + Parch + Fare + Embarked + Title,
+                  data=combi[!is.na(combi$Age),],
+                  method="anova")
+combi$Age[is.na(combi$Age)] <- predict(Agefit, combi[is.na(combi$Age),])
+summary(combi)
+summary(combi$Embarked)
+train <- combi[1:891,]
+test <- combi[892:1309,]
+fit3 <- rpart(Survived ~ Pclass + Sex + Age + SibSp + Parch + Fare + Embarked + Title + FamilySize + FamilyID, data=train,method = "class")
+plot(fit3)
+survived5 <- predict(fit3,test, type = "class")
+test2 <- data.frame(PassengerId = test$PassengerId, Survived=survived5)
+writemycsv(test2)
+##put an embarqued place on everybody
+summary(combi$Embarked)
+which(combi$Embarked == '')
+combi$Embarked[c(62,830)] = "S"
+combi$Embarked <- factor(combi$Embarked)
+##clear the na in fare
+summary(combi$Fare)
+which(is.na(combi$Fare))
+combi$Fare[1044] <- median(combi$Fare, na.rm=TRUE)
+```
+##
+```{r}
+combi$FamilyID2 <- combi$FamilyID
+combi$FamilyID2 <- as.character(combi$FamilyID2)
+summary(combi$FamilySize)
+combi$FamilyID2[combi$FamilySize <= 3] <- 'Small'
+combi$FamilyID2 <- factor(combi$FamilyID2)
+install.packages('randomForest')
+library(randomForest)
+set.seed(415)
+train <- combi[1:891,]
+test <- combi[892:1309,]
+fit <- randomForest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                            Embarked + Title + FamilySize + FamilyID2,
+                      data=train, 
+                      importance=TRUE, 
+                      ntree=2000)
+varImpPlot(fit)
+```
+## we check prediction with what we have so far
+```{r}
+ Prediction <- predict(fit, test)
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+writemycsv(submit)
+install.packages('party')
+library(party)
+set.seed(415)
+fit <- cforest(as.factor(Survived) ~ Pclass + Sex + Age + SibSp + Parch + Fare +
+                                       Embarked + Title + FamilySize + FamilyID,
+                 data = train, 
+                 controls=cforest_unbiased(ntree=2000, mtry=3))
+Prediction <- predict(fit, test, OOB=TRUE, type = "response")
+submit <- data.frame(PassengerId = test$PassengerId, Survived = Prediction)
+writemycsv(submit)
+summary(train$Sex)
+```
+
+## end approach finishes with a score of 0.81339
+```{r}
+library(dplyr)
+glimpse(train)
 ```
 
