@@ -1,6 +1,6 @@
-#Building my container
-#data-science-project/Dockerfile
-
+# data-science-project/Dockerfile
+#docker build -t ralle123/myproj .
+#docker run -p 8888:8888 ralle123/myproj
 FROM python:3.6.5-slim
 
 WORKDIR /app
