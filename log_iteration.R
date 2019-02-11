@@ -1,12 +1,15 @@
 rm(list = ls())
 temp = list.files(pattern="*.txt")
 df <- data.frame(matrix(ncol = 3, nrow = 0))
-myFile <- temp[1]
-
-
-todayTime <- as.character(format(Sys.time(), "%y-%m-%d %H:%M %p"))
-startTime <- Sys.time()
-endTime <- Sys.time()
+#do a process
+myProcess <- function(fileName){
+  todayTime <- as.character(format(Sys.time(), "%y-%m-%d %H:%M %p"))
+  startTime <- Sys.time()
+  #do stuff
+  endTime <- Sys.time()
+  myTime <- as.character.Date(difftime(endTime,startTime, tz,units = c("auto")))
+  df <- dataEntry(df,c(fileName,todayTime,myTime))
+}
 
 dataEntry <- function(df,myData){
   #data added to df
@@ -20,8 +23,12 @@ writeDf <- function(df){
   tDate <- as.character(format(Sys.time(), "%m_%d"))
   write.csv(df,file=paste0("log",tDate,".csv"))
 }
-myTime <- as.character.Date(difftime(endTime,startTime, tz,units = c("auto")))
-df <- dataEntry(df,c(myFile,todayTime,myTime))
+if (length(temp)>0){
+  #start_time <- Sys.time()
+  df=lapply(temp,myProcess)
+  #end_time <- Sys.time()
+  #process_time<-end_time - start_time
+}
 writeDf(df)
 
 
